@@ -5,6 +5,7 @@ import org.odata4j.consumer.ODataConsumer;
 import org.odata4j.consumer.ODataConsumers;
 import org.odata4j.consumer.behaviors.OClientBehaviors;
 import org.odata4j.core.OCreateRequest;
+import org.odata4j.core.OEntities;
 import org.odata4j.core.OEntity;
 import org.odata4j.core.OFuncs;
 import org.odata4j.core.OProperties;
@@ -19,14 +20,16 @@ public class SapOdataTest extends AbstractLog {
 		SapOdataTest app = new SapOdataTest();
 		// 基本身份验证
 		ODataConsumer c = ODataConsumers.newBuilder(serviceUrl)
-				.setClientBehaviors(OClientBehaviors.basicAuth("RFC_CALL", "123456"), new SAPCSRFBehaviour())
+				.setClientBehaviors(OClientBehaviors.basicAuth("pandh", "passw0rd"), new SAPCSRFBehaviour())
 				// .setFormatType(FormatType.JSON) json格式传输
 				.build();
 		try {
-
-			app.createEntity(c);
+			app.deleteEntity(c);
+			//app.createEntity(c);
 		} catch (ODataProducerException e) {
 			System.out.println("HttpStatus:" + e.getHttpStatus());
+			System.out.println("Message:" + e.getMessage());
+		}catch(Exception e){
 			System.out.println("Message:" + e.getMessage());
 		}
 
@@ -58,9 +61,22 @@ public class SapOdataTest extends AbstractLog {
 
 	public void createEntity(ODataConsumer c) {
 		// 创建一条订单数据
+		
+		OEntity newOrderI = c.createEntity("OderItemSet")
+				.properties(OProperties.string("ItemID", "1"))
+				.properties(OProperties.string("Material", "123333"))
+				.get();
+
+		OEntity newOrderI2 = c.createEntity("OderItemSet")
+				.properties(OProperties.string("ItemID", "2"))
+				.properties(OProperties.string("Material", "223333"))
+				.get();
+		OEntity orders[] ={newOrderI,newOrderI2}; 
 		OEntity newOrderH = c.createEntity("OderHeadSet")
 				.properties(OProperties.string("CreatedBy", "PANDH"))
 				.properties(OProperties.datetime("CreatedAt", new LocalDateTime()))
+				//.link("OderItemSet", newOrderI)
+				.inline("OderItemSet", orders)
 				.execute();
 
 		report("新订单: " + newOrderH);
@@ -82,19 +98,25 @@ public class SapOdataTest extends AbstractLog {
 
 	public void mergeEntity(ODataConsumer c) {
 		// 用merge方法更新订单数据
-		c.mergeEntity("Products", 10).properties(OProperties.int32("Rating", 500)).execute();
+		c.mergeEntity("OderHeadSet", "1000000037").properties(OProperties.datetime("CreatedAt", new LocalDateTime())).execute();
 
 		report("newProduct rating after merge: "
-				+ c.getEntity("Products", 10).execute().getProperty("Rating").getValue());
+				+ c.getEntity("OderHeadSet", "1000000037").execute().getProperty("CreatedAt").getValue());
 
 	}
 
 	public void deleteEntity(ODataConsumer c) {
 		// 删除记录
-		c.deleteEntity("Products", 10).execute();
 		boolean exists = true;
 		try {
-			c.getEntity("Products", 10).execute();
+			String eds = c.getMetadata().getVersion();//DELETE有BUG 不会自动取Metadata 获取CSRF TOKEN,手动获取
+			c.deleteEntity("OderHeadSet", "1000000037").execute();
+		} catch (ODataProducerException e) {
+			report("HttpStatus:"+e.getHttpStatus() + "  "+e.getMessage());
+		}
+
+		try {
+			c.getEntity("OderHeadSet", "1000000037").execute();
 		} catch (ODataProducerException e) {
 			if (e.getHttpStatus().getStatusCode() == 404)
 				exists = false;
@@ -104,10 +126,8 @@ public class SapOdataTest extends AbstractLog {
 
 	public void getEntities_orderBy(ODataConsumer c) {
 		// 排序
-		report("highest rated product (compute on server): "
-				+ c.getEntities("Products").orderBy("Rating desc").top(1).execute().first());
-		report("highest rated product (compute on client): " + c.getEntities("Products").execute()
-				.orderBy(OFuncs.entityPropertyValue("Rating", Integer.class)).last());
-
+		for (OEntity enty : c.getEntities("OderHeadSet").orderBy("OderID desc").top(10).execute()) {
+			reportEntity("订单: " + enty.getProperty("OderID").getValue(), enty);
+		}
 	}
 }
